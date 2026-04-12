@@ -24,11 +24,37 @@ import numpy as np
 from simulator import simulate
 
 
+SUMMARY_STAT_NAMES = [
+    "infected_extinction_t",
+    "degree_std",
+    "rewire_peak",
+    "infected_auc",
+    "degree_tail_low",
+    "infected_final",
+    "degree_tail_hi",
+    "infected_peak",
+    "infected_t_peak",
+]
+
+
 @dataclass(frozen=True)
 class PriorBounds:
     beta: Tuple[float, float] = (0.05, 0.50)
     gamma: Tuple[float, float] = (0.02, 0.20)
     rho: Tuple[float, float] = (0.0, 0.8)
+
+
+def extinction_time_after_peak(infected_curve: np.ndarray, t_horizon: int, threshold: float = 0.01) -> float:
+    """Return normalized first time at/after peak where infection drops below threshold.
+
+    If the trajectory never drops below the threshold, return 1.0.
+    """
+    peak_idx = int(np.argmax(infected_curve))
+    after_peak = infected_curve[peak_idx:]
+    below = np.where(after_peak <= threshold)[0]
+    if len(below) == 0:
+        return 1.0
+    return float((peak_idx + below[0]) / max(t_horizon, 1))
 
 
 def load_observed_dataset(data_dir: str) -> Dict[str, np.ndarray]:
@@ -76,38 +102,38 @@ def compute_replicate_features(
     rewiring_curve: np.ndarray,
     degree_hist: np.ndarray,
 ) -> np.ndarray:
-    """Compute informative features for one replicate."""
+    """Compute refined low-overlap features for one replicate."""
     t_max = max(len(infected_curve) - 1, 1)
 
-    peak_inf = float(np.max(infected_curve))
-    t_peak_inf = float(np.argmax(infected_curve) / t_max)
-    final_inf = float(infected_curve[-1])
-    mean_inf = float(np.mean(infected_curve))
+    infected_peak = float(np.max(infected_curve))
+    infected_t_peak = float(np.argmax(infected_curve) / t_max)
+    infected_auc = float(np.trapezoid(infected_curve, dx=1.0) / t_max)
+    infected_final = float(infected_curve[-1])
+    infected_extinction_t = extinction_time_after_peak(infected_curve, t_horizon=t_max)
 
-    total_rewire = float(np.sum(rewiring_curve))
-    peak_rewire = float(np.max(rewiring_curve))
-    t_peak_rewire = float(np.argmax(rewiring_curve) / t_max)
+    rewire_peak = float(np.max(rewiring_curve))
 
     counts = np.asarray(degree_hist, dtype=float)
     total_nodes = max(float(np.sum(counts)), 1.0)
     degrees = np.arange(len(counts), dtype=float)
-    mean_degree = float(np.sum(degrees * counts) / total_nodes)
-    var_degree = float(np.sum(((degrees - mean_degree) ** 2) * counts) / total_nodes)
-    std_degree = float(np.sqrt(max(var_degree, 0.0)))
-    frac_deg_ge_12 = float(np.sum(counts[12:]) / total_nodes)
+    probs = counts / total_nodes
+    mean_degree = float(np.sum(degrees * probs))
+    var_degree = float(np.sum(((degrees - mean_degree) ** 2) * probs))
+    degree_std = float(np.sqrt(max(var_degree, 0.0)))
+    degree_tail_low = float(np.sum(probs[:5]))
+    degree_tail_hi = float(np.sum(probs[15:]))
 
     return np.array(
         [
-            peak_inf,
-            t_peak_inf,
-            final_inf,
-            mean_inf,
-            total_rewire,
-            peak_rewire,
-            t_peak_rewire,
-            mean_degree,
-            std_degree,
-            frac_deg_ge_12,
+            infected_extinction_t,
+            degree_std,
+            rewire_peak,
+            infected_auc,
+            degree_tail_low,
+            infected_final,
+            degree_tail_hi,
+            infected_peak,
+            infected_t_peak,
         ],
         dtype=float,
     )
@@ -118,9 +144,12 @@ def summarize_dataset(
     rewiring_matrix: np.ndarray,
     degree_hist_matrix: np.ndarray,
 ) -> np.ndarray:
-    """Convert a multi-replicate dataset into a fixed-length summary vector."""
+    """Convert a multi-replicate dataset into refined summary vector.
+
+    We use means across replicates to reduce redundant variability summaries.
+    """
     n_reps = infected_matrix.shape[0]
-    rep_features = np.zeros((n_reps, 10), dtype=float)
+    rep_features = np.zeros((n_reps, len(SUMMARY_STAT_NAMES)), dtype=float)
 
     for r in range(n_reps):
         rep_features[r] = compute_replicate_features(
@@ -130,8 +159,7 @@ def summarize_dataset(
         )
 
     feature_means = np.mean(rep_features, axis=0)
-    feature_stds = np.std(rep_features, axis=0)
-    return np.concatenate([feature_means, feature_stds])
+    return feature_means
 
 
 def sample_from_prior(rng: np.random.Generator, bounds: PriorBounds) -> np.ndarray:
