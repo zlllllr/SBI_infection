@@ -1,64 +1,103 @@
 # SBI for Epidemic Parameter Inference on Adaptive Networks
 
-Companion code and data for the simulation-based inference (SBI) class assignment.
-Given a stochastic SIR epidemic model on an adaptive network, infer the unknown parameters $(\beta, \gamma, \rho)$ from observed data using SBI methods.
+This repository contains code, data, notebooks, and report material for simulation-based inference (SBI) on a stochastic adaptive-network SIR model.
 
-## The model
+Goal: infer unknown parameters $(\beta,\gamma,\rho)$ from aggregate observations when the likelihood is intractable.
 
-A population of 200 agents interact on an undirected contact network.
-Each agent is **Susceptible (S)**, **Infected (I)**, or **Recovered (R)**.
-The initial network is an Erdos-Renyi graph $G(N, p)$ with $p = 0.05$, giving an expected degree of about 10.
-At time 0, five agents chosen uniformly at random are infected.
+## Model summary
 
-Three parameters govern the dynamics:
+- Population: 200 agents on an undirected Erdos-Renyi contact network ($p=0.05$).
+- States: Susceptible (S), Infected (I), Recovered (R).
+- Initial condition: 5 infected agents at time 0.
+- Time horizon: 200 steps.
+
+At each step:
+
+1. Infection: each S-I edge transmits with probability $\beta$.
+2. Recovery: each infected node recovers with probability $\gamma$.
+3. Rewiring: each S-I edge rewires away from infected contact with probability $\rho$.
+
+Parameter priors used by ABC methods:
 
 | Parameter | Meaning | Prior |
-|-----------|---------|-------|
-| $\beta$ | Infection probability per S--I edge per step | Uniform(0.05, 0.50) |
+|---|---|---|
+| $\beta$ | Infection probability per S-I edge per step | Uniform(0.05, 0.50) |
 | $\gamma$ | Recovery probability per infected agent per step | Uniform(0.02, 0.20) |
-| $\rho$ | Rewiring probability per S--I edge per step | Uniform(0.0, 0.8) |
+| $\rho$ | Rewiring probability per S-I edge per step | Uniform(0.0, 0.8) |
 
-At each of the 200 time steps, three phases are applied synchronously:
+## Project structure
 
-1. **Infection.** Each susceptible neighbor of an infected agent becomes infected with probability $\beta$.
-2. **Recovery.** Each infected agent recovers with probability $\gamma$.
-3. **Rewiring.** For each S-I edge, with probability $\rho$ the susceptible agent breaks the link and connects to a random non-neighbor. This models behavioral avoidance of infected contacts.
+Core code:
 
-## Repository contents
+- `simulator.py`: adaptive-network SIR simulator.
+- `ABC_rejection.py`: rejection ABC with pilot scaling and quantile acceptance.
+- `SMC_ABC.py`: SMC-ABC with weighted particles, stage-wise tolerance tightening, and diagnostics.
 
+Observed dataset:
+
+- `data/infected_timeseries.csv`
+- `data/rewiring_timeseries.csv`
+- `data/final_degree_histograms.csv`
+
+Analysis notebooks:
+
+- `parameter_sweep_visualization.ipynb`: parameter-sweep diagnostics and refined summary-statistic selection.
+- `abc_rejection_analysis.ipynb`: rejection ABC workflow, posterior plots, diagnostics.
+- `abc_smc_analysis.ipynb`: SMC-ABC workflow, stage diagnostics, weighted posterior plots, rejection-vs-SMC comparison.
+
+## Setup
+
+Recommended environment:
+
+1. Create and activate a virtual environment.
+2. Install dependencies:
+
+```bash
+pip install numpy pandas matplotlib jupyter
 ```
-simulator.py                      # Python implementation of the model
-data/
-  infected_timeseries.csv         # Fraction infected over time (40 replicates)
-  rewiring_timeseries.csv         # Rewiring counts over time (40 replicates)
-  final_degree_histograms.csv     # Degree distribution at t=200 (40 replicates)
+
+## Quick usage
+
+Run rejection ABC:
+
+```bash
+python ABC_rejection.py --n-pilot 100 --n-samples 2000 --accept-quantile 0.05 --n-reps 20 --out-prefix abc_rejection_analysis
 ```
 
-## Simulator usage
+Run SMC-ABC:
 
-```python
-import numpy as np
-from simulator import simulate
-
-# Run one replicate with specific parameters
-rng = np.random.default_rng(42)
-infected, rewires, degrees = simulate(beta=0.3, gamma=0.15, rho=0.7, rng=rng)
+```bash
+python SMC_ABC.py --n-pilot 100 --n-particles 100 --n-init-samples 1000 --n-stages 4 --stage-quantile 0.60 --kernel-scale 0.60 --n-reps 20 --out-prefix abc_smc_analysis
 ```
 
-See `simulator.py` for full parameter documentation.
+Open notebooks:
 
-## Observed data
+```bash
+jupyter notebook
+```
 
-The data files contain 40 independent realizations, all generated with the **same** unknown $(\beta, \gamma, \rho)$.
-The contact network is never observed.
+## Summary statistics used in ABC runs
 
-| File | Columns |
-|------|---------|
-| `infected_timeseries.csv` | `replicate_id`, `time`, `infected_fraction` |
-| `rewiring_timeseries.csv` | `replicate_id`, `time`, `rewire_count` |
-| `final_degree_histograms.csv` | `replicate_id`, `degree` (0-30, clipped), `count` |
+The refined 9-dimensional summary vector is:
 
-## Requirements
+- infected_extinction_t
+- degree_std
+- rewire_peak
+- infected_auc
+- degree_tail_low
+- infected_final
+- degree_tail_hi
+- infected_peak
+- infected_t_peak
 
-- Python 3.8+
-- NumPy
+These were selected from parameter-sweep diagnostics to balance:
+
+1. sensitivity to parameter changes,
+2. complementarity (low overlap),
+3. joint informativeness for $(\beta,\gamma,\rho)$,
+4. compact dimensionality.
+
+## Notes
+
+- SMC-ABC generally improves efficiency and posterior concentration relative to basic rejection ABC in this project.
+- A residual $\beta$-$\rho$ trade-off remains and should be interpreted as a structural identifiability limitation rather than a pure sampling artifact.
