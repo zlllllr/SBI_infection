@@ -146,7 +146,7 @@ def summarize_dataset(
 ) -> np.ndarray:
     """Convert a multi-replicate dataset into refined summary vector.
 
-    We use means across replicates to reduce redundant variability summaries.
+    Use means across replicates to reduce redundant variability summaries.
     """
     n_reps = infected_matrix.shape[0]
     rep_features = np.zeros((n_reps, len(SUMMARY_STAT_NAMES)), dtype=float)
