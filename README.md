@@ -100,4 +100,4 @@ These were selected from parameter-sweep diagnostics to balance:
 ## Notes
 
 - SMC-ABC generally improves efficiency and posterior concentration relative to basic rejection ABC in this project.
-- A residual $\beta$-$\rho$ trade-off remains and should be interpreted as a structural identifiability limitation rather than a pure sampling artifact.
+- A residual $\beta$ - $\rho$ trade-off remains and should be interpreted as a structural identifiability limitation rather than a pure sampling artifact.
